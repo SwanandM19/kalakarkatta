@@ -5884,6 +5884,7 @@
 # if __name__ == "__main__":
 #     asyncio.run(main())
 
+
 import asyncio
 import json
 from datetime import datetime
@@ -5897,6 +5898,7 @@ import os
 from typing import List, Dict
 import hashlib
 import pytz
+import time
 
 
 # ============================================================
@@ -5931,33 +5933,80 @@ IST = pytz.timezone('Asia/Kolkata')
 GOOGLE_SHEETS_CREDENTIALS_FILE = "credentials.json"
 GOOGLE_SHEET_NAME               = "Kalakar Katta"
 GOOGLE_WORKSHEET_NAME           = "Sheet1"
-TARGET_SCRIPTS                  = 20
+TARGET_SCRIPTS                  = 10
 
-VALID_CATEGORIES = [
-    "sports", "general", "crime", "politics",
-    "education", "economy", "entertainment", "horror"
+# ============================================================
+# Film Industry Keywords — article MUST match at least one
+# Covers Bollywood, Marathi, South (Tamil/Telugu/Kannada/Malayalam)
+# ============================================================
+FILM_KEYWORDS = [
+    # Bollywood / Hindi
+    'bollywood', 'बॉलीवुड', 'hindi film', 'हिंदी चित्रपट', 'हिंदी सिनेमा',
+    'box office', 'बॉक्स ऑफिस', 'ott release', 'ott', 'नेटफ्लिक्स', 'amazon prime',
+    'disney hotstar', 'zee5', 'sonyliv',
+    # Marathi
+    'मराठी चित्रपट', 'marathi film', 'मराठी सिनेमा', 'marathi cinema',
+    'मराठी नाटक', 'marathi natak', 'मराठी मालिका', 'marathi serial',
+    'मराठी कलाकार', 'zee marathi', 'star pravah', 'colors marathi',
+    # South Indian
+    'tollywood', 'kollywood', 'sandalwood', 'mollywood',
+    'tamil film', 'तमिळ चित्रपट', 'telugu film', 'तेलुगू चित्रपट',
+    'kannada film', 'कन्नड चित्रपट', 'malayalam film', 'मल्याळम चित्रपट',
+    'south indian film', 'साउथ इंडियन',
+    # Generic film terms (Marathi/Hindi)
+    'चित्रपट', 'सिनेमा', 'film', 'movie', 'actor', 'actress',
+    'अभिनेता', 'अभिनेत्री', 'दिग्दर्शक', 'director', 'producer', 'निर्माता',
+    'trailer', 'ट्रेलर', 'teaser', 'टीझर', 'song', 'गाणे', 'music launch',
+    'film release', 'चित्रपट प्रदर्शन', 'premiere', 'प्रीमियर',
+    'award', 'पुरस्कार', 'filmfare', 'national award', 'राष्ट्रीय पुरस्कार',
+    'celebrity', 'सेलिब्रिटी', 'star', 'स्टार',
+    # Popular actors/directors (will match in titles/content)
+    'shahrukh', 'shah rukh', 'salman khan', 'aamir khan', 'akshay kumar',
+    'deepika', 'priyanka', 'katrina', 'ranveer', 'ranbir',
+    'prabhas', 'allu arjun', 'vijay', 'rajinikanth', 'dhanush',
+    'mahesh babu', 'ntr', 'ram charan', 'yash', 'nayanthara',
+    'amitabh', 'hrithik', 'tiger shroff',
+    # Marathi specific actors/directors
+    'नाना पाटेकर', 'nana patekar', 'सचिन', 'sachin pilgaonkar',
+    'महेश मांजरेकर', 'स्वप्निल जोशी', 'ankush chaudhary',
+    'सई ताम्हणकर', 'amruta khanvilkar', 'भारत जाधव',
+    'नागराज मंजुळे', 'nagraj manjule', 'sairat', 'झुंड', 'jhund',
 ]
 
+# ============================================================
+# Film-industry categories only for this page
+# ============================================================
+VALID_CATEGORIES = [
+    "bollywood", "marathi_cinema", "south_cinema",
+    "ott", "awards", "celebrity", "general_entertainment"
+]
+
+# Mapping for Google Sheets (simplified display)
+CATEGORY_DISPLAY = {
+    "bollywood":           "BOLLYWOOD",
+    "marathi_cinema":      "MARATHI",
+    "south_cinema":        "SOUTH",
+    "ott":                 "OTT",
+    "awards":              "AWARDS",
+    "celebrity":           "CELEBRITY",
+    "general_entertainment": "ENTERTAINMENT"
+}
+
 REFUSAL_KEYWORDS = [
-    # English
     "I appreciate", "I should clarify", "I'm Perplexity",
     "search assistant", "I'm not able", "I cannot create",
     "Would you like", "clarify my role", "I'm an AI",
     "as an AI", "I don't create",
-    # Hindi
     "मुझे खेद है", "मैं इस अनुरोध", "खोज परिणामों में",
     "प्रदान किए गए", "कृपया स्पष्ट करें", "मैं सही तरीके",
     "विशिष्ट तथ्य नहीं", "आवश्यक माहिती",
-    # Marathi
     "मला खेद आहे", "मला क्षमस्व", "उत्तर देण्यासाठी आवश्यक",
     "शोध परिणामांमध्ये", "कृपया एक पूर्ण बातमी",
     "अधिक संबंधित शोध", "विशिष्ट घटना", "तपशील पुनः तपास",
-    # Self-identification
     "मी Perplexity", "मी perplexity", "माझी भूमिका",
     "मूळ कार्याच्या विरुद्ध", "script लिहिण्याची विनंती",
     "सूचना देणे", "संशोधित उत्तरे", "मी एक AI",
     "script writer नाही", "मी तयार करू शकत नाही",
-    # Fact-checking / clarification
     "शोध निकालांमध्ये", "मेल होत नाही", "script तयार करू शकतो पण",
     "विस्तृत search results", "स्पष्ट करा"
 ]
@@ -5967,7 +6016,10 @@ SKIP_TITLE_KEYWORDS = [
     'horoscope', 'rashifal', 'astrology', 'dharm', 'puja',
     'utility', 'यूटिलिटी', 'आध्यात्मिक', 'spirituality',
     'धार्मिक परंपरा', 'मंदिर', 'व्रत', 'उपवास', 'rashibhavishya',
-    'अध्यात्म बातम्या', 'धार्मिक', 'ज्योतिष'
+    'अध्यात्म बातम्या', 'धार्मिक', 'ज्योतिष',
+    # Non-film news to skip
+    'राजकारण', 'politics', 'crime', 'गुन्हा', 'अपघात', 'accident',
+    'शेअर बाजार', 'stock market', 'हवामान', 'weather'
 ]
 
 SKIP_CONTENT_KEYWORDS = [
@@ -5978,6 +6030,27 @@ SKIP_CONTENT_KEYWORDS = [
     'धार्मिक आणि आध्यात्मिक विषयांवर सर्वांग माहिती',
     'यूटिलिटी बातम्या म्हणजे काय',
     'utility news definition'
+]
+
+SKIP_URL_PATTERNS = [
+    'javascript:', 'mailto:', '#',
+    '/category/', '/tag/', '/author/',
+    'facebook.com', 'twitter.com', 'instagram.com',
+    'youtube.com', 'whatsapp.com', '/myaccount/',
+    '/install_app', '/advertisement', '/epaper',
+    'web-stories', 'photo-gallery', '/videos/',
+    '/games/', '/jokes/', '/terms-and-conditions',
+    '/topic/', '/widget/', '/livetv',
+    'articlelist', '/live',
+    '/utility/', '/utilities/',
+    '/adhyatma/', '/astrology/', '/rashifal/',
+    '/horoscope/', '/jyotish/', '/puja/',
+    '/dharm/', '/dharma/', '/spirituality/',
+    '/rashibhavishya/', '/religion/',
+    # Non-entertainment sections
+    '/politics/', '/crime/', '/sports/', '/economy/',
+    '/business/', '/technology/', '/education/',
+    '/thane/', '/pune/', '/nashik/', '/mumbai-news/',
 ]
 
 SCRIPT_CTA = "तुमचं काय मत आहे? कमेंट करून सांगा आणि फॉलो करा कलाकार कट्टा.."
@@ -5993,170 +6066,220 @@ processed_hashes    = set()
 
 
 # ============================================================
-# News Sites
+# Film/Entertainment News Sites
+# Pointing directly to entertainment sections
 # ============================================================
 NEWS_SITES = [
     {
-        "name": "TV9 Marathi",
-        "url": "https://www.tv9marathi.com/latest-news",
-        "link_pattern": "tv9marathi.com",
-        "target": 4,
-        "fetch_limit": 30
-    },
-    {
-        "name": "ABP Majha",
-        "url": "https://marathi.abplive.com/news",
-        "link_pattern": "abplive.com",
-        "target": 4,
-        "fetch_limit": 30
-    },
-    {
-        "name": "Lokmat",
-        "url": "https://www.lokmat.com/latestnews/",
-        "link_pattern": "lokmat.com",
-        "target": 4,
-        "fetch_limit": 30
-    },
-    {
-        "name": "Maharashtra Times",
-        "url": "https://maharashtratimes.com/",
+        "name": "Maharashtra Times - Entertainment",
+        "url": "https://maharashtratimes.com/entertainment",
         "link_pattern": "maharashtratimes.com",
-        "target": 4,
+        "target": 3,
         "fetch_limit": 30
     },
     {
-        "name": "NDTV Marathi",
-        "url": "https://marathi.ndtv.com/",
-        "link_pattern": "marathi.ndtv.com",
-        "target": 4,
+        "name": "TV9 Marathi - Entertainment",
+        "url": "https://www.tv9marathi.com/entertainment",
+        "link_pattern": "tv9marathi.com",
+        "target": 3,
         "fetch_limit": 30
-    }
+    },
+    {
+        "name": "ABP Majha - Entertainment",
+        "url": "https://marathi.abplive.com/entertainment",
+        "link_pattern": "abplive.com",
+        "target": 3,
+        "fetch_limit": 30
+    },
+    {
+        "name": "Lokmat - Entertainment",
+        "url": "https://www.lokmat.com/entertainment/",
+        "link_pattern": "lokmat.com",
+        "target": 3,
+        "fetch_limit": 30
+    },
+    {
+        "name": "NDTV Marathi - Entertainment",
+        "url": "https://marathi.ndtv.com/entertainment",
+        "link_pattern": "marathi.ndtv.com",
+        "target": 2,
+        "fetch_limit": 25
+    },
+    {
+        "name": "Bollywood Hungama",
+        "url": "https://www.bollywoodhungama.com/news/bollywood/",
+        "link_pattern": "bollywoodhungama.com",
+        "target": 2,
+        "fetch_limit": 25
+    },
+    {
+        "name": "Pinkvilla",
+        "url": "https://www.pinkvilla.com/entertainment",
+        "link_pattern": "pinkvilla.com",
+        "target": 2,
+        "fetch_limit": 25
+    },
 ]
 
 
 # ============================================================
-# Google Sheets Setup
+# Film Industry Filter — STRICT
 # ============================================================
-def setup_google_sheets():
-    try:
-        scope = [
-            'https://spreadsheets.google.com/feeds',
-            'https://www.googleapis.com/auth/drive'
-        ]
-        creds = Credentials.from_service_account_file(
-            GOOGLE_SHEETS_CREDENTIALS_FILE, scopes=scope
-        )
-        client = gspread.authorize(creds)
+def is_film_related(title: str, content: str) -> bool:
+    combined = (title + ' ' + content[:1500]).lower()
+    return any(kw.lower() in combined for kw in FILM_KEYWORDS)
 
+
+# ============================================================
+# Google Sheets Setup — with retry
+# ============================================================
+def setup_google_sheets(max_retries: int = 5, retry_delay: int = 10):
+    for attempt in range(1, max_retries + 1):
         try:
-            sheet = client.open(GOOGLE_SHEET_NAME)
-            print(f"✅ Connected: '{GOOGLE_SHEET_NAME}'")
-        except gspread.SpreadsheetNotFound:
-            sheet = client.create(GOOGLE_SHEET_NAME)
-            print(f"✅ Created: '{GOOGLE_SHEET_NAME}'")
-
-        try:
-            worksheet = sheet.worksheet(GOOGLE_WORKSHEET_NAME)
-            print(f"✅ Worksheet: '{GOOGLE_WORKSHEET_NAME}'")
-            current_rows = worksheet.row_count
-            if current_rows < 2000:
-                worksheet.add_rows(5000 - current_rows)
-                print(f"✅ Expanded sheet: {current_rows} → 5000 rows")
-            else:
-                print(f"✅ Sheet has {current_rows} rows — OK")
-
-        except gspread.WorksheetNotFound:
-            worksheet = sheet.add_worksheet(
-                title=GOOGLE_WORKSHEET_NAME, rows=5000, cols=10
+            scope = [
+                'https://spreadsheets.google.com/feeds',
+                'https://www.googleapis.com/auth/drive'
+            ]
+            creds = Credentials.from_service_account_file(
+                GOOGLE_SHEETS_CREDENTIALS_FILE, scopes=scope
             )
-            worksheet.update('A1:E1', [[
-                'Timestamp (IST)', 'Category', 'Title', 'Script', 'Source Link'
-            ]])
-            worksheet.format('A1:E1', {
+            client = gspread.authorize(creds)
+
+            try:
+                sheet = client.open(GOOGLE_SHEET_NAME)
+                print(f"✅ Connected: '{GOOGLE_SHEET_NAME}'")
+            except gspread.SpreadsheetNotFound:
+                sheet = client.create(GOOGLE_SHEET_NAME)
+                print(f"✅ Created: '{GOOGLE_SHEET_NAME}'")
+
+            try:
+                worksheet = sheet.worksheet(GOOGLE_WORKSHEET_NAME)
+                print(f"✅ Worksheet: '{GOOGLE_WORKSHEET_NAME}'")
+                current_rows = worksheet.row_count
+                if current_rows < 2000:
+                    worksheet.add_rows(5000 - current_rows)
+                    print(f"✅ Expanded sheet: {current_rows} → 5000 rows")
+                else:
+                    print(f"✅ Sheet has {current_rows} rows — OK")
+
+            except gspread.WorksheetNotFound:
+                worksheet = sheet.add_worksheet(
+                    title=GOOGLE_WORKSHEET_NAME, rows=5000, cols=10
+                )
+                worksheet.update('A1:E1', [[
+                    'Timestamp (IST)', 'Category', 'Title', 'Script', 'Source Link'
+                ]])
+                worksheet.format('A1:E1', {
+                    'textFormat': {
+                        'bold': True,
+                        'foregroundColor': {'red': 1.0, 'green': 1.0, 'blue': 1.0}
+                    },
+                    # Purple/violet theme for Kalakar Katta
+                    'backgroundColor': {'red': 0.5, 'green': 0.2, 'blue': 0.8},
+                    'horizontalAlignment': 'CENTER'
+                })
+                worksheet.set_column_width('A', 200)
+                worksheet.set_column_width('B', 150)
+                worksheet.set_column_width('C', 400)
+                worksheet.set_column_width('D', 600)
+                worksheet.set_column_width('E', 400)
+                print(f"✅ Created worksheet with headers")
+
+            return worksheet
+
+        except gspread.exceptions.APIError as e:
+            error_str = str(e)
+            if any(code in error_str for code in ['503', '500', '429', '502']):
+                if attempt < max_retries:
+                    print(f"⚠️ Google Sheets error (attempt {attempt}/{max_retries}) — retrying in {retry_delay}s...")
+                    time.sleep(retry_delay)
+                    continue
+                else:
+                    print(f"❌ Google Sheets unavailable after {max_retries} attempts: {e}")
+                    return None
+            else:
+                print(f"❌ Sheets API error: {e}")
+                return None
+        except FileNotFoundError:
+            print(f"❌ credentials.json not found!")
+            return None
+        except Exception as e:
+            print(f"❌ Sheets setup error: {e}")
+            import traceback
+            traceback.print_exc()
+            return None
+
+
+# ============================================================
+# Save to Google Sheets — with retry
+# ============================================================
+def save_to_google_sheets(worksheet, category, title, script, source_link, max_retries: int = 3):
+    for attempt in range(1, max_retries + 1):
+        try:
+            timestamp = datetime.now(IST).strftime('%Y-%m-%d %H:%M:%S IST')
+
+            script = '\n'.join(str(i) for i in script) if isinstance(script, list) else str(script).strip()
+            script = script.replace('[', '').replace(']', '')
+            title = str(title).strip()
+            source_link = str(source_link).strip()
+            category = str(category).strip().lower()
+
+            if category not in VALID_CATEGORIES:
+                category = "general_entertainment"
+
+            next_row = len(worksheet.get_all_values()) + 1
+            worksheet.append_row(
+                [timestamp, CATEGORY_DISPLAY.get(category, category.upper()), title, script, source_link],
+                value_input_option='RAW'
+            )
+
+            worksheet.format(f'A{next_row}:E{next_row}', {
+                'textFormat': {
+                    'foregroundColor': {'red': 0.0, 'green': 0.0, 'blue': 0.0},
+                    'fontSize': 10
+                },
+                'backgroundColor': {'red': 1.0, 'green': 1.0, 'blue': 1.0},
+                'wrapStrategy': 'WRAP',
+                'verticalAlignment': 'TOP'
+            })
+
+            category_colors = {
+                'bollywood':             {'red': 1.0,  'green': 0.85, 'blue': 0.7},
+                'marathi_cinema':        {'red': 0.8,  'green': 1.0,  'blue': 0.8},
+                'south_cinema':          {'red': 0.7,  'green': 0.9,  'blue': 1.0},
+                'ott':                   {'red': 0.9,  'green': 0.8,  'blue': 1.0},
+                'awards':                {'red': 1.0,  'green': 0.95, 'blue': 0.6},
+                'celebrity':             {'red': 1.0,  'green': 0.8,  'blue': 0.9},
+                'general_entertainment': {'red': 0.95, 'green': 0.95, 'blue': 0.95},
+            }
+            worksheet.format(f'B{next_row}', {
                 'textFormat': {
                     'bold': True,
-                    'foregroundColor': {'red': 1.0, 'green': 1.0, 'blue': 1.0}
+                    'foregroundColor': {'red': 0.0, 'green': 0.0, 'blue': 0.0},
+                    'fontSize': 10
                 },
-                'backgroundColor': {'red': 0.2, 'green': 0.6, 'blue': 0.9},
+                'backgroundColor': category_colors.get(category, category_colors['general_entertainment']),
                 'horizontalAlignment': 'CENTER'
             })
-            worksheet.set_column_width('A', 200)
-            worksheet.set_column_width('B', 150)
-            worksheet.set_column_width('C', 400)
-            worksheet.set_column_width('D', 600)
-            worksheet.set_column_width('E', 400)
-            print(f"✅ Created worksheet with headers")
 
-        return worksheet
+            print(f"✅ Saved [{CATEGORY_DISPLAY.get(category, category.upper())}] {title[:50]}...")
+            return True
 
-    except FileNotFoundError:
-        print(f"❌ credentials.json not found!")
-        return None
-    except Exception as e:
-        print(f"❌ Sheets setup error: {e}")
-        import traceback
-        traceback.print_exc()
-        return None
-
-
-# ============================================================
-# Save to Google Sheets
-# ============================================================
-def save_to_google_sheets(worksheet, category, title, script, source_link):
-    try:
-        timestamp = datetime.now(IST).strftime('%Y-%m-%d %H:%M:%S IST')
-
-        script = '\n'.join(str(i) for i in script) if isinstance(script, list) else str(script).strip()
-        script = script.replace('[', '').replace(']', '')
-        title = str(title).strip()
-        source_link = str(source_link).strip()
-        category = str(category).strip().lower()
-
-        if category not in VALID_CATEGORIES:
-            category = "general"
-
-        next_row = len(worksheet.get_all_values()) + 1
-        worksheet.append_row(
-            [timestamp, category, title, script, source_link],
-            value_input_option='RAW'
-        )
-
-        worksheet.format(f'A{next_row}:E{next_row}', {
-            'textFormat': {
-                'foregroundColor': {'red': 0.0, 'green': 0.0, 'blue': 0.0},
-                'fontSize': 10
-            },
-            'backgroundColor': {'red': 1.0, 'green': 1.0, 'blue': 1.0},
-            'wrapStrategy': 'WRAP',
-            'verticalAlignment': 'TOP'
-        })
-
-        category_colors = {
-            'crime':         {'red': 0.95, 'green': 0.8,  'blue': 0.8},
-            'politics':      {'red': 0.8,  'green': 0.9,  'blue': 1.0},
-            'sports':        {'red': 0.8,  'green': 1.0,  'blue': 0.8},
-            'entertainment': {'red': 1.0,  'green': 0.9,  'blue': 0.8},
-            'education':     {'red': 0.9,  'green': 0.95, 'blue': 1.0},
-            'economy':       {'red': 0.95, 'green': 1.0,  'blue': 0.85},
-            'horror':        {'red': 0.7,  'green': 0.7,  'blue': 0.7},
-            'general':       {'red': 1.0,  'green': 1.0,  'blue': 0.9}
-        }
-        worksheet.format(f'B{next_row}', {
-            'textFormat': {
-                'bold': True,
-                'foregroundColor': {'red': 0.0, 'green': 0.0, 'blue': 0.0},
-                'fontSize': 10
-            },
-            'backgroundColor': category_colors.get(category, category_colors['general']),
-            'horizontalAlignment': 'CENTER'
-        })
-
-        print(f"✅ Saved [{category.upper()}] {title[:50]}...")
-        return True
-
-    except Exception as e:
-        print(f"❌ Save error: {e}")
-        return False
+        except gspread.exceptions.APIError as e:
+            error_str = str(e)
+            if any(code in error_str for code in ['503', '500', '429', '502']):
+                if attempt < max_retries:
+                    print(f"   ⚠️ Sheets 503 on save (attempt {attempt}/{max_retries}) — retrying in 8s...")
+                    time.sleep(8)
+                    continue
+                else:
+                    print(f"   ❌ Save failed after {max_retries} retries: {e}")
+                    return False
+            print(f"❌ Save error: {e}")
+            return False
+        except Exception as e:
+            print(f"❌ Save error: {e}")
+            return False
 
 
 # ============================================================
@@ -6194,10 +6317,6 @@ def safe_truncate(text: str, max_chars: int) -> str:
 # Safe API Response Extractor
 # ============================================================
 def extract_response_content(response) -> str:
-    """
-    Safely extract text content from Perplexity API response,
-    handling all known response formats including list-type content blocks.
-    """
     raw_choice = response.choices[0]
 
     if hasattr(raw_choice, 'message'):
@@ -6365,15 +6484,98 @@ async def fetch_article_with_retry(crawler, url: str, retries: int = 3) -> str:
 
 
 # ============================================================
-# Scraping
+# Perplexity Film News Fallback Search
+# Triggered when scraped articles < TARGET_SCRIPTS
 # ============================================================
-async def scrape_multiple_marathi_sources():
+async def fetch_film_news_via_perplexity(needed: int) -> List[Dict]:
+    global total_input_tokens, total_output_tokens, total_cost
+
+    print(f"\n🎬 Fetching {needed} more film industry news via Perplexity search...")
+
+    try:
+        response = perplexity_client.chat.completions.create(
+            model=ANALYSIS_MODEL,
+            messages=[
+                {
+                    "role": "system",
+                    "content": "You are a film industry news researcher for Indian cinema. Return ONLY valid JSON array."
+                },
+                {
+                    "role": "user",
+                    "content": f"""Search for the latest {needed} news articles about Indian film industry.
+Cover: Bollywood, Marathi cinema, South Indian films (Tamil/Telugu/Kannada/Malayalam), OTT releases, celebrity gossip, box office, awards.
+
+Return a JSON array with exactly {needed} items:
+[{{
+  "title": "News headline (can be in English or Marathi)",
+  "detailed_summary": "150-200 word Marathi summary of the news",
+  "category": "bollywood/marathi_cinema/south_cinema/ott/awards/celebrity/general_entertainment",
+  "importance": "high/medium/low",
+  "key_points": ["point1 in Marathi", "point2 in Marathi", "point3 in Marathi"],
+  "link": "source URL if known, else empty string"
+}}]
+
+Rules:
+- All news MUST be about Indian film/entertainment industry ONLY
+- No politics, crime, sports, or general news
+- detailed_summary and key_points MUST be in Marathi
+- Return only the JSON array, no extra text
+- Use the most recent news available"""
+                }
+            ],
+            temperature=0.3,
+            max_tokens=4000
+        )
+
+        if hasattr(response, 'usage'):
+            i_t = response.usage.prompt_tokens
+            o_t = response.usage.completion_tokens
+            total_input_tokens  += i_t
+            total_output_tokens += o_t
+            c = (i_t * ANALYSIS_INPUT_COST) + (o_t * ANALYSIS_OUTPUT_COST)
+            total_cost += c
+            print(f"   📊 Perplexity search: {i_t}in + {o_t}out = ${c:.4f}")
+
+        content = extract_response_content(response)
+        content = re.sub(r'<think>.*?</think>', '', content, flags=re.DOTALL).strip()
+        match = re.search(r'\[.*\]', content, re.DOTALL)
+
+        if match:
+            parsed = json.loads(match.group())
+            results = []
+            for art in parsed:
+                if art.get('category') not in VALID_CATEGORIES:
+                    art['category'] = 'general_entertainment'
+                art['source']     = 'Perplexity Search'
+                art['scraped_at'] = datetime.now(IST).isoformat()
+                art['hash']       = get_content_hash(
+                    art.get('title', ''), art.get('detailed_summary', '')
+                )
+                results.append(art)
+            print(f"   ✅ Got {len(results)} film articles from Perplexity search")
+            return results
+        else:
+            print(f"   ⚠️ No JSON in Perplexity search response")
+            return []
+
+    except Exception as e:
+        error_str = str(e).lower()
+        if any(code in error_str for code in ['402', '429', 'credit', 'quota', 'insufficient']):
+            raise CreditExhaustedException(str(e))
+        print(f"   ❌ Perplexity film search error: {e}")
+        return []
+
+
+# ============================================================
+# Scraping — Entertainment sections only
+# ============================================================
+async def scrape_film_sources():
     all_news = []
 
     async with AsyncWebCrawler(verbose=False) as crawler:
         for site in NEWS_SITES:
             print(f"\n{'='*60}")
-            print(f"🔍 {site['name']} | Target: {site['target']}")
+            print(f"🎬 {site['name']} | Target: {site['target']}")
             print(f"{'='*60}")
 
             site_articles = []
@@ -6406,22 +6608,7 @@ async def scrape_multiple_marathi_sources():
 
                     if (15 < len(title) < 300 and
                         site['link_pattern'] in href and
-                        not any(x in href.lower() for x in [
-                            'javascript:', 'mailto:', '#',
-                            '/category/', '/tag/', '/author/',
-                            'facebook.com', 'twitter.com', 'instagram.com',
-                            'youtube.com', 'whatsapp.com', '/myaccount/',
-                            '/install_app', '/advertisement', '/epaper',
-                            'web-stories', 'photo-gallery', '/videos/',
-                            '/games/', '/jokes/', '/terms-and-conditions',
-                            '/topic/', '/widget/', '/livetv',
-                            'articlelist', '/live',
-                            '/utility/', '/utilities/',
-                            '/adhyatma/', '/astrology/', '/rashifal/',
-                            '/horoscope/', '/jyotish/', '/puja/',
-                            '/dharm/', '/dharma/', '/spirituality/',
-                            '/rashibhavishya/', '/religion/'
-                        ])):
+                        not any(x in href.lower() for x in SKIP_URL_PATTERNS)):
 
                         if href.startswith('/'):
                             base = (site['url'].split('/') + '//'
@@ -6449,6 +6636,11 @@ async def scrape_multiple_marathi_sources():
 
                     markdown = await fetch_article_with_retry(crawler, article['link'])
                     content  = markdown if markdown else article['title']
+
+                    # ✅ STRICT film industry filter
+                    if not is_film_related(article['title'], content):
+                        print(f"   🚫 Not film-related — skipped")
+                        continue
 
                     if any(kw.lower() in content.lower() for kw in SKIP_CONTENT_KEYWORDS):
                         print(f"   ⏭️  Skipped (utility/spiritual content)")
@@ -6482,6 +6674,8 @@ async def scrape_multiple_marathi_sources():
                     all_news.extend(filtered)
                     print(f"🧠 {site['name']}: Analyzed {len(filtered)} articles")
 
+            except CreditExhaustedException:
+                raise
             except Exception as e:
                 print(f"❌ Error {site['name']}: {e}")
 
@@ -6491,7 +6685,7 @@ async def scrape_multiple_marathi_sources():
 
 
 # ============================================================
-# AI Categorization
+# AI Categorization — Film-specific categories
 # ============================================================
 async def smart_analyze_with_category(articles: List[Dict], source_name: str):
     global total_input_tokens, total_output_tokens, total_cost
@@ -6508,7 +6702,7 @@ async def smart_analyze_with_category(articles: List[Dict], source_name: str):
         ]
 
         if not batch:
-            print(f"   ⏭️  Skipped batch — all utility/spiritual articles")
+            print(f"   ⏭️  Skipped batch — filtered out")
             continue
 
         index_to_link  = {i: article['link']  for i, article in enumerate(batch)}
@@ -6518,17 +6712,24 @@ async def smart_analyze_with_category(articles: List[Dict], source_name: str):
         for idx, article in enumerate(batch):
             articles_text += f"INDEX_{idx}: {article['title']}\n{safe_truncate(article['content'], 500)}\n---\n"
 
-        prompt = f"""मराठी बातम्या विश्लेषक: खालील बातम्यांना category आणि Marathi summary द्या.
+        prompt = f"""भारतीय चित्रपट उद्योग बातम्या विश्लेषक: खालील बातम्यांना category आणि Marathi summary द्या.
 
 ⚠️ नियम:
 1. detailed_summary आणि key_points फक्त मराठीत लिहा
 2. JSON मध्ये "index" field EXACTLY जसा दिला (0,1,2,3,4) तसाच परत द्या
 3. title आणि link field नको - फक्त index वापरा
 
-Categories: sports, general, crime, politics, education, economy, entertainment, horror
+Categories (फक्त यापैकी एक):
+- bollywood (हिंदी चित्रपट)
+- marathi_cinema (मराठी चित्रपट/मालिका/नाटक)
+- south_cinema (तमिळ/तेलुगू/कन्नड/मल्याळम)
+- ott (OTT releases, Netflix, Prime, Hotstar)
+- awards (पुरस्कार सोहळे)
+- celebrity (सेलिब्रिटी gossip, personal life)
+- general_entertainment (इतर entertainment)
 
 JSON array format:
-[{{"index": 0, "category": "cat", "detailed_summary": "मराठी सारांश १५०-२०० शब्द", "importance": "high/medium/low", "key_points": ["मुद्दा १", "मुद्दा २", "मुद्दा ३"]}}]
+[{{"index": 0, "category": "bollywood", "detailed_summary": "मराठी सारांश १५०-२०० शब्द", "importance": "high/medium/low", "key_points": ["मुद्दा १", "मुद्दा २", "मुद्दा ३"]}}]
 
 बातम्या:
 {articles_text}
@@ -6558,12 +6759,9 @@ JSON array format:
                 total_cost += c
                 print(f"   📊 {i_t}in + {o_t}out = ${c:.4f}")
 
-            # ✅ Safe extraction
             content = extract_response_content(response)
 
             if not content.strip():
-                print(f"   ⚠️ Empty response! type: {type(response.choices)}")
-                print(f"   ⚠️ dump: {str(response.choices)[:300]}")
                 raise ValueError("Empty content from API")
 
             content = re.sub(r'<think>.*?</think>', '', content, flags=re.DOTALL).strip()
@@ -6583,7 +6781,7 @@ JSON array format:
                         art['title'] = index_to_title.get(pos, art.get('title', ''))
 
                     if art.get('category') not in VALID_CATEGORIES:
-                        art['category'] = 'general'
+                        art['category'] = 'general_entertainment'
 
                 all_filtered.extend(parsed)
                 print(f"   ✅ Categorized {len(parsed)} | Links: INDEX-matched ✅")
@@ -6594,7 +6792,7 @@ JSON array format:
                     all_filtered.append({
                         'index':            i,
                         'title':            article['title'],
-                        'category':         'general',
+                        'category':         'general_entertainment',
                         'detailed_summary': safe_truncate(article['content'], 600),
                         'importance':       'medium',
                         'link':             article['link'],
@@ -6607,7 +6805,7 @@ JSON array format:
                 all_filtered.append({
                     'index':            i,
                     'title':            article['title'],
-                    'category':         'general',
+                    'category':         'general_entertainment',
                     'detailed_summary': safe_truncate(article['content'], 600),
                     'importance':       'medium',
                     'link':             article['link'],
@@ -6619,15 +6817,13 @@ JSON array format:
             if any(code in error_str for code in [
                 '402', '429', 'credit', 'quota', 'insufficient', 'balance', 'billing'
             ]):
-                print(f"\n💳 CREDITS EXHAUSTED during analysis!")
                 raise CreditExhaustedException(str(e))
             print(f"   ❌ AI error: {e}")
-            # ✅ Fallback with real content — never loses articles
             for i, article in enumerate(batch):
                 all_filtered.append({
                     'index':            i,
                     'title':            article['title'],
-                    'category':         'general',
+                    'category':         'general_entertainment',
                     'detailed_summary': safe_truncate(article['content'], 600),
                     'importance':       'medium',
                     'link':             article['link'],
@@ -6647,50 +6843,56 @@ JSON array format:
 
 
 # ============================================================
-# Script Generation
+# Script Generation — Film/Entertainment tone
 # ============================================================
 async def create_reel_script_single(news_article: Dict):
     global total_input_tokens, total_output_tokens, total_cost
 
-    category = news_article.get('category', 'general')
+    category = news_article.get('category', 'general_entertainment')
+    category_display = CATEGORY_DISPLAY.get(category, 'ENTERTAINMENT')
 
-    system_prompt = f"""तुम्ही एक मराठी Instagram Reel script writer आहात.
+    system_prompt = f"""तुम्ही एक मराठी Instagram Reel script writer आहात जे भारतीय चित्रपट उद्योगाबद्दल content बनवतात.
 फक्त मराठी भाषेत लिहा. हिंदी, इंग्रजी किंवा स्वतःची ओळख करून देऊ नका.
 तुम्ही AI आहात हे कधीही सांगू नका. फक्त script लिहा.
 
+Tone: चित्रपटप्रेमींसाठी उत्साही, मनोरंजक, insider feel — जणू तुम्ही filmy gossip सांगत आहात.
+
 Structure (15-18 lines total):
-- Line 1-2: धक्कादायक hook (घटनेची सुरुवात)
-- Line 3-10: सर्व facts (नावे, ठिकाण, तारीख, संख्या सह)
-- Line 11-14: प्रश्न / विश्लेषण / ट्विस्ट
+- Line 1-2: 🎬 धक्कादायक filmy hook — ऐकलं का? / विश्वास बसणार नाही!
+- Line 3-10: सर्व facts (actor/actress चे नाव, चित्रपटाचे नाव, तारीख, box office, OTT platform सह)
+- Line 11-14: चित्रपटप्रेमींसाठी प्रश्न / विश्लेषण / ट्विस्ट
 - Line 15-18: CTA
 
 कठोर नियम:
-- संपूर्ण output फक्त मराठीत (proper nouns सोडून)
+- संपूर्ण output फक्त मराठीत (film names, actor names सोडून)
 - 15-18 lines, प्रत्येक line 1-2 sentences
 - कोणतेही heading, explanation, markdown नाही
 - माहिती कमी असेल तर उपलब्ध facts stretch करा
 - "माहिती नाही", "खेद आहे", "मी Perplexity" असे कधीही लिहू नका
 - शेवटची line नक्की हीच: "{SCRIPT_CTA}"
-- script अर्धवट सोडू नका — शेवटपर्यंत लिहा"""
+- script अर्धवट सोडू नका — शेवटपर्यंत लिहा
+- चित्रपट/कलाकार/OTT चा उल्लेख script मध्ये अवश्य करा"""
 
     summary    = safe_truncate(
         news_article.get('detailed_summary', news_article.get('title', '')), 600
     )
     key_points = ', '.join(news_article.get('key_points', [news_article.get('title', '')]))
 
-    user_prompt_v1 = f"""Category: {category.upper()}
+    user_prompt_v1 = f"""Category: {category_display}
 शीर्षक: {news_article['title']}
 सारांश: {summary}
 मुद्दे: {key_points}
 
-वरील बातमीचे facts वापरून 15-18 मराठी lines तयार करा.
+वरील भारतीय चित्रपट उद्योगातील बातमीचे facts वापरून 15-18 मराठी lines तयार करा.
+Tone: उत्साही, मनोरंजक, filmy gossip style
 शेवटची line नक्की: "{SCRIPT_CTA}"
 जरी माहिती कमी असली तरी उपलब्ध तथ्यांवर आधारित पूर्ण script लिहा."""
 
-    user_prompt_v2 = f"""खालील बातमीवर 15 मराठी वाक्ये लिहा.
+    user_prompt_v2 = f"""खालील चित्रपट/entertainment बातमीवर 15 मराठी वाक्ये लिहा.
 बातमी: {news_article['title']}. {safe_truncate(summary, 200)}
 - प्रत्येक वाक्य नवीन line वर लिहा
-- फक्त मराठीत लिहा, हिंदी/इंग्रजी नको
+- फक्त मराठीत लिहा, filmy tone ठेवा
+- चित्रपट/कलाकाराचा उल्लेख करा
 - शेवटची line नक्की: "{SCRIPT_CTA}" """
 
     prompts = [user_prompt_v1, user_prompt_v2]
@@ -6703,7 +6905,7 @@ Structure (15-18 lines total):
                     {"role": "system", "content": system_prompt},
                     {"role": "user",   "content": prompts[attempt - 1]}
                 ],
-                temperature=0.8,
+                temperature=0.85,
                 max_tokens=2000
             )
 
@@ -6714,7 +6916,6 @@ Structure (15-18 lines total):
                 total_output_tokens += o_t
                 total_cost += (i_t * SCRIPT_INPUT_COST) + (o_t * SCRIPT_OUTPUT_COST)
 
-            # ✅ Safe extraction
             script = extract_response_content(response).strip()
             script = re.sub(r'<think>.*?</think>', '', script, flags=re.DOTALL).strip()
             script = script.replace('```', '').strip()
@@ -6740,26 +6941,26 @@ Structure (15-18 lines total):
             print(f"   ⚠️ Attempt {attempt} error: {e}")
             await asyncio.sleep(2)
 
-    # Last-resort fallback with real article content
-    title   = news_article.get('title', 'एक महत्त्वाची बातमी')[:80]
+    # Last-resort fallback
+    title   = news_article.get('title', 'एक धक्कादायक चित्रपट बातमी')[:80]
     summary = safe_truncate(
         news_article.get('detailed_summary', news_article.get('title', '')), 200
     )
-    return f"""{title}
+    return f"""थांबा! ही बातमी वाचली का?
+
+{title}
 
 {summary}
 
-ही घटना राज्यात मोठी चर्चा निर्माण करत आहे.
+भारतीय चित्रपट उद्योगात ही बातमी सध्या जोरदार चर्चेत आहे.
 
-या प्रकरणात अनेक महत्त्वाचे प्रश्न उपस्थित होत आहेत.
+चाहत्यांमध्ये या बातमीने एकच खळबळ उडवली आहे.
 
-संबंधित यंत्रणांनी याबाबत तातडीने उत्तर देणे आवश्यक आहे.
+सोशल मीडियावर हे प्रकरण ट्रेंडिंगवर आहे.
 
-सर्वसामान्य जनतेवर या घटनेचा थेट परिणाम होणार आहे.
+या कलाकाराच्या या निर्णयाबद्दल प्रत्येकजण बोलतोय.
 
-विरोधी पक्षाने या मुद्द्यावर सरकारला धारेवर धरले आहे.
-
-येत्या काळात या प्रकरणात मोठी उलथापालथ होण्याची शक्यता आहे.
+चित्रपटप्रेमींसाठी हे खूपच मोठं आश्चर्य ठरलं आहे.
 
 तुम्हाला या बातमीबद्दल काय वाटते, ते नक्की सांगा.
 
@@ -6773,10 +6974,11 @@ async def main():
     global total_input_tokens, total_output_tokens, total_cost
 
     print("=" * 70)
-    print("🚀 JABARI KHABRI - SMART NEWS SCRAPER v10.0")
+    print("🎬 KALAKAR KATTA - FILM NEWS SCRAPER v1.0")
     print(f"🔍 Analysis : {ANALYSIS_MODEL}")
     print(f"✍️  Scripts  : {SCRIPT_MODEL}")
-    print(f"🎯 Target   : {TARGET_SCRIPTS} scripts")
+    print(f"🎯 Target   : {TARGET_SCRIPTS} scripts (Film Industry Only)")
+    print(f"🎭 Covers   : Bollywood | Marathi | South | OTT | Awards")
     print(f"🕐 Timezone : IST (Asia/Kolkata)")
     print("=" * 70)
 
@@ -6789,15 +6991,16 @@ async def main():
     start_time = datetime.now(IST)
 
     print("\n" + "=" * 70)
-    print("STEP 1: SCRAPING 5 MARATHI NEWS SITES")
+    print("STEP 1: SCRAPING ENTERTAINMENT NEWS SITES")
     print("=" * 70 + "\n")
 
     try:
-        all_articles = await scrape_multiple_marathi_sources()
+        all_articles = await scrape_film_sources()
     except CreditExhaustedException:
         print("\n🛑 Credits exhausted during scraping. Stopping.")
         return
 
+    # De-duplicate
     unique_articles = []
     seen_hashes = set()
     for article in all_articles:
@@ -6808,7 +7011,23 @@ async def main():
             unique_articles.append(article)
             seen_hashes.add(h)
 
-    print(f"\n✅ Total unique articles: {len(unique_articles)}")
+    print(f"\n✅ Film articles scraped: {len(unique_articles)}")
+
+    # ✅ Perplexity fallback if scraping gave fewer than target
+    if len(unique_articles) < TARGET_SCRIPTS:
+        needed = TARGET_SCRIPTS - len(unique_articles)
+        print(f"⚡ Only {len(unique_articles)} scraped — fetching {needed} more via Perplexity AI search...")
+        try:
+            extra = await fetch_film_news_via_perplexity(needed)
+            for art in extra:
+                h = art.get('hash', '')
+                if h not in seen_hashes:
+                    unique_articles.append(art)
+                    seen_hashes.add(h)
+        except CreditExhaustedException:
+            print("🛑 Credits exhausted during Perplexity fallback.")
+
+    print(f"\n✅ Total unique film articles: {len(unique_articles)}")
 
     if len(unique_articles) < TARGET_SCRIPTS:
         print(f"⚠️  Only {len(unique_articles)} articles found — "
@@ -6816,12 +7035,13 @@ async def main():
 
     category_counts = {}
     for article in unique_articles:
-        cat = article.get('category', 'general')
+        cat = article.get('category', 'general_entertainment')
         category_counts[cat] = category_counts.get(cat, 0) + 1
 
     print("\n📊 Category Breakdown:")
     for cat, count in sorted(category_counts.items(), key=sort_by_count):
-        print(f"   {cat.upper():<15} {'█' * count} ({count})")
+        display = CATEGORY_DISPLAY.get(cat, cat.upper())
+        print(f"   {display:<20} {'█' * count} ({count})")
 
     unique_articles.sort(key=sort_by_priority)
     selected_articles = unique_articles[:TARGET_SCRIPTS]
@@ -6839,9 +7059,10 @@ async def main():
 
     if worksheet and selected_articles:
         for idx, article in enumerate(selected_articles, 1):
+            cat_display = CATEGORY_DISPLAY.get(article.get('category', ''), 'ENTERTAINMENT')
             print(f"\n[{idx:02d}/{len(selected_articles)}] "
-                  f"{article.get('source','')[:12]} | "
-                  f"{article.get('category','').upper():<13} | "
+                  f"{article.get('source','')[:14]} | "
+                  f"{cat_display:<14} | "
                   f"{article['title'][:40]}...")
 
             try:
@@ -6862,7 +7083,7 @@ async def main():
 
             success = save_to_google_sheets(
                 worksheet,
-                article.get('category', 'general'),
+                article.get('category', 'general_entertainment'),
                 article['title'],
                 script,
                 article.get('link', '')
@@ -6878,11 +7099,11 @@ async def main():
     total_tokens   = total_input_tokens + total_output_tokens
 
     print("\n" + "=" * 70)
-    print("📈 FINAL SUMMARY")
+    print("📈 FINAL SUMMARY — KALAKAR KATTA")
     print("=" * 70)
     print(f"   🔍 Analysis model     : {ANALYSIS_MODEL}")
     print(f"   ✍️  Script model       : {SCRIPT_MODEL}")
-    print(f"   📰 Articles scraped   : {len(unique_articles)}")
+    print(f"   🎬 Film articles      : {len(unique_articles)}")
     print(f"   ✅ Scripts saved      : {successful_saves}")
     print(f"   ❌ Failed             : {failed_saves}")
     print(f"   ⏱️  Total time         : {total_duration:.0f}s ({total_duration/60:.1f} mins)")
